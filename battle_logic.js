@@ -1,4 +1,3 @@
-```javascript
 // ==========================================
 // battle_logic.js
 // バトルエンジンの純粋な計算ロジック
@@ -544,5 +543,3 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
     animationId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animationId);
 };
-
-```
