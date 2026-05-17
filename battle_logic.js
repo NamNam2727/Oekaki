@@ -40,6 +40,7 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
             this.vy = 0;
             this.dir = dir;
             this.scale = 0.5;
+            this.charWidth = 200; // キャラクターの横幅（初期値）
 
             this.totalPixels = 0;
             this.footPixels = 0;
@@ -83,7 +84,10 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             const activeParts = this.partsData.filter(p => p.active && p.paths && p.paths.length > 0);
             
-            if (activeParts.length === 0) return;
+            if (activeParts.length === 0) {
+                this.charWidth = 100;
+                return;
+            }
 
             activeParts.forEach(p => {
                 const b = p.bounds || { minX: 320, maxX: 320, minY: 240, maxY: 240 };
@@ -96,6 +100,8 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
             this.cx = (minX + maxX) / 2;
             this.cy = (minY + maxY) / 2;
             this.bottomOffset = maxY - this.cy;
+            // キャラクター自身の実際の横幅を記録（スケール適用前の元のピクセル幅）
+            this.charWidth = Math.max(50, maxX - minX);
 
             activeParts.forEach(p => {
                 const b = p.bounds || { minX: 320, maxX: 320, minY: 240, maxY: 240 };
@@ -152,8 +158,9 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
                 
                 this.vx += targetDir * accel * dt;
 
-                // 歩行の場合はジャンプする
-                if (isWalk && isGrounded && Math.abs(this.vx) < 500) {
+                // 歩行の場合は「絵(キャラクター自身)1個分の距離」まで接近した時だけジャンプする
+                const jumpDistance = (this.charWidth || 200) * this.scale;
+                if (isWalk && isGrounded && Math.abs(this.vx) < 500 && Math.abs(distToOpponent) < jumpDistance) {
                     this.vy = -400; 
                 }
 
