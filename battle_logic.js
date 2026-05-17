@@ -1,3 +1,4 @@
+```javascript
 // ==========================================
 // battle_logic.js
 // バトルエンジンの純粋な計算ロジック
@@ -137,13 +138,26 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
                 if (accel > 3000) accel = 3000;
                 
                 let isFlying = activeFeet.some(p => p.subType === 'fly');
+                let isWheel = activeFeet.some(p => p.subType === 'wheel');
+                let isWalk = activeFeet.some(p => p.subType === 'walk');
+
                 if (isFlying) {
                     if (this.y > FLOOR_Y - 150) this.vy -= 1500 * dt;
                     accel *= 1.5;
+                } else if (isWheel) {
+                    accel *= 4.0; // 車輪の場合は移動速度を4倍にする
+                    if (!isGrounded) accel *= 0.2;
                 } else {
                     if (!isGrounded) accel *= 0.2;
                 }
+                
                 this.vx += targetDir * accel * dt;
+
+                // 歩行の場合はジャンプする
+                if (isWalk && isGrounded && Math.abs(this.vx) < 500) {
+                    this.vy = -400; 
+                }
+
             } else {
                 if (isGrounded && Math.abs(this.vx) < 50) {
                     this.vy = -300;
@@ -203,31 +217,56 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
                         
                         if (dist < colDist) {
                             let baseDmg = Math.max(1, p.pixels / 50);
-                            let dmgMult = window.calculateDamageMultiplier(p.rgb, op.rgb);
                             
                             if (p.subType === 'melee') baseDmg *= 1; 
-                            if (p.subType === 'shield') baseDmg *= 0.25;
-                            if (p.type === 'body' || p.type === 'hand' || p.type === 'foot') baseDmg *= 0.25; 
+                            else if (p.subType === 'shield') baseDmg *= 0.25;
+                            else if (p.type === 'body' || p.type === 'hand' || p.type === 'foot') baseDmg *= 0.25; 
 
-                            if (op.subType === 'shield' && p.subType === 'melee') baseDmg *= 0.25; 
+                            const isOpShield = op.type === 'equip' && op.subType === 'shield';
+                            const handShields = opponent.partsData.filter(sp => sp.type === 'equip' && sp.subType === 'shield' && sp.active && sp.attachedTo);
 
-                            let finalDmg = baseDmg * dmgMult * 5;
-                            op.hp -= finalDmg;
-                            
-                            opponent.vx += (dx > 0 ? 1 : -1) * finalDmg * 2;
-                            
-                            if (op.hp <= 0) {
-                                op.active = false;
-                                partDestroyed = true;
-                                opponent.vx += (dx > 0 ? 1 : -1) * 400;
-                                opponent.vy = -300;
-                                if (op.type === 'hand') {
-                                    opponent.partsData.forEach(dep => {
-                                        if (dep.attachedTo === op.id) dep.active = false;
-                                    });
-                                }
-                                if (op.type === 'foot' && op.subType === 'fly') {
+                            // 手持ちの盾があり、かつ攻撃対象がその盾自身でない場合は肩代わりする
+                            if (!isOpShield && handShields.length > 0) {
+                                handShields.forEach(shield => {
+                                    let dmgMult = window.calculateDamageMultiplier(p.rgb, shield.rgb);
+                                    let finalDmg = baseDmg * dmgMult * 5;
+                                    
+                                    if (p.subType === 'melee') finalDmg *= 0.25; // 盾特有の近接ダメージ軽減
+                                    
+                                    finalDmg /= handShields.length; // 複数ある場合は分散
+                                    shield.hp -= finalDmg;
+                                    
+                                    if (shield.hp <= 0) {
+                                        shield.active = false;
+                                        partDestroyed = true;
+                                    }
+                                });
+                                opponent.vx += (dx > 0 ? 1 : -1) * baseDmg * 5 * 2;
+                            } else {
+                                // 通常のダメージ処理
+                                let currentBaseDmg = baseDmg;
+                                let dmgMult = window.calculateDamageMultiplier(p.rgb, op.rgb);
+                                
+                                if (isOpShield && p.subType === 'melee') currentBaseDmg *= 0.25; 
+
+                                let finalDmg = currentBaseDmg * dmgMult * 5;
+                                op.hp -= finalDmg;
+                                
+                                opponent.vx += (dx > 0 ? 1 : -1) * finalDmg * 2;
+                                
+                                if (op.hp <= 0) {
                                     op.active = false;
+                                    partDestroyed = true;
+                                    opponent.vx += (dx > 0 ? 1 : -1) * 400;
+                                    opponent.vy = -300;
+                                    if (op.type === 'hand') {
+                                        opponent.partsData.forEach(dep => {
+                                            if (dep.attachedTo === op.id) dep.active = false;
+                                        });
+                                    }
+                                    if (op.type === 'foot' && op.subType === 'fly') {
+                                        op.active = false;
+                                    }
                                 }
                             }
                         }
@@ -402,18 +441,41 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
                 }
 
                 if (dist < op.radius * opponent.scale) {
-                    let dmgMult = window.calculateDamageMultiplier(b.rgb, op.rgb);
-                    let finalDmg = b.power * dmgMult * 5;
-                    op.hp -= finalDmg;
-                    b.active = false;
-                    
-                    if (op.hp <= 0) {
-                        op.active = false;
-                        if (opponent === p1) p1Destroyed = true;
-                        else p2Destroyed = true;
+                    const isOpShield = op.type === 'equip' && op.subType === 'shield';
+                    const handShields = opponent.partsData.filter(sp => sp.type === 'equip' && sp.subType === 'shield' && sp.active && sp.attachedTo);
 
+                    // 手持ちの盾があり、かつ攻撃対象がその盾自身でない場合は肩代わりする（射撃）
+                    if (!isOpShield && handShields.length > 0) {
+                        handShields.forEach(shield => {
+                            let dmgMult = window.calculateDamageMultiplier(b.rgb, shield.rgb);
+                            let finalDmg = b.power * dmgMult * 5;
+                            finalDmg /= handShields.length; // 複数ある場合は分散
+                            shield.hp -= finalDmg;
+                            
+                            if (shield.hp <= 0) {
+                                shield.active = false;
+                                if (opponent === p1) p1Destroyed = true;
+                                else p2Destroyed = true;
+                            }
+                        });
                         opponent.vx += (b.vx > 0 ? 1 : -1) * 400;
                         opponent.vy = -300;
+                        b.active = false;
+                    } else {
+                        // 通常の射撃ダメージ
+                        let dmgMult = window.calculateDamageMultiplier(b.rgb, op.rgb);
+                        let finalDmg = b.power * dmgMult * 5;
+                        op.hp -= finalDmg;
+                        b.active = false;
+                        
+                        if (op.hp <= 0) {
+                            op.active = false;
+                            if (opponent === p1) p1Destroyed = true;
+                            else p2Destroyed = true;
+
+                            opponent.vx += (b.vx > 0 ? 1 : -1) * 400;
+                            opponent.vy = -300;
+                        }
                     }
                 }
             });
@@ -482,3 +544,5 @@ window.createBattleEngine = (canvas, myParts, enemyParts, onEnd, timeState, draw
     animationId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animationId);
 };
+
+```
